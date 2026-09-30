@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0a14">
+<title>🖨️ Kris's Prints · 3D-Druck Shop</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- LADE-SCREEN -->
+<div class="loading" id="loading">
+  <div class="loader"></div>
+  <div class="loader-text">🖨️ Kris's Prints lädt...</div>
+</div>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-inner">
+    <a href="#" class="logo" onclick="showHome(); return false;">
+      <span class="logo-icon">🖨️</span>
+      <span class="logo-text">Kris's <b>Prints</b></span>
+    </a>
+
+    <div class="search-box">
+      <input type="text" id="search" placeholder="🔍 Produkte suchen...">
+    </div>
+
+    <div class="header-actions">
+      <select class="lang-select" id="lang-select">
+        <option value="de">🇩🇪 DE</option>
+        <option value="en">🇬🇧 EN</option>
+        <option value="fr">🇫🇷 FR</option>
+        <option value="it">🇮🇹 IT</option>
+        <option value="es">🇪🇸 ES</option>
+        <option value="pt">🇵🇹 PT</option>
+        <option value="nl">🇳🇱 NL</option>
+        <option value="pl">🇵🇱 PL</option>
+      </select>
+      <button class="icon-btn" id="cart-btn" title="Warenkorb">
+        🛒<span class="cart-badge" id="cart-badge">0</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav class="nav-tabs">
+  <button class="nav-tab active" data-view="home" id="tab-home">🏠 Shop</button>
+  <button class="nav-tab" data-view="custom" id="tab-custom">📤 Eigenes Modell</button>
+  <button class="nav-tab" data-view="orders" id="tab-orders">📦 Meine Bestellungen</button>
+  <button class="nav-tab" data-view="info" id="tab-info">ℹ️ Info & Versand</button>
+</nav>
+
+<!-- HAUPTBEREICH -->
+<main class="container">
+
+  <!-- SHOP -->
+  <section id="view-home" class="view active">
+    <div class="hero">
+      <h1 id="hero-title">🖨️ 3D-Druck aus Pregartsdorf</h1>
+      <p id="hero-sub">Handgefertigte 3D-Drucke · Druckzeit 1–7 Stunden · Versand in ganz Europa</p>
+      <div class="hero-badges">
+        <span class="badge">🇪🇺 EU-Versand</span>
+        <span class="badge">🎨 Individuell</span>
+        <span class="badge">⚡ Schnell</span>
+      </div>
+    </div>
+
+    <div class="filters">
+      <select id="filter-category">
+        <option value="">Alle Kategorien</option>
+      </select>
+      <select id="filter-sort">
+        <option value="new">🆕 Neueste</option>
+        <option value="price-asc">💶 Preis aufsteigend</option>
+        <option value="price-desc">💶 Preis absteigend</option>
+        <option value="time-asc">⏱️ Kürzeste Druckzeit</option>
+        <option value="time-desc">⏱️ Längste Druckzeit</option>
+      </select>
+    </div>
+
+    <div class="products-grid" id="products-grid"></div>
+  </section>
+
+  <!-- CUSTOM UPLOAD -->
+  <section id="view-custom" class="view">
+    <div class="card">
+      <h2>📤 Eigenes 3D-Modell hochladen</h2>
+      <p class="muted">Lade deine STL, OBJ oder 3MF Datei hoch (max. 50 MB). Ich drucke sie für dich und schicke sie per Post.</p>
+
+      <form id="custom-form">
+        <div class="form-group">
+          <label>Deine Datei (STL / OBJ / 3MF)</label>
+          <input type="file" id="custom-file" accept=".stl,.obj,.3mf,.step,.stp" required>
+        </div>
+        <div class="form-group">
+          <label>Nachricht / Wünsche</label>
+          <textarea id="custom-message" rows="4" placeholder="Farbe, Material, Größe, Infill..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Kontakt (E-Mail oder Telefon)</label>
+          <input type="text" id="custom-contact" placeholder="damit ich dir antworten kann" required>
+        </div>
+        <button type="submit" class="btn">📤 Hochladen & anfragen</button>
+        <div class="upload-status" id="upload-status"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- MEINE BESTELLUNGEN -->
+  <section id="view-orders" class="view">
+    <div class="card">
+      <h2>📦 Meine Bestellungen</h2>
+      <div class="form-group">
+        <label>Bestellnummer eingeben</label>
+        <input type="text" id="order-lookup" placeholder="z.B. ORD-ABC123">
+        <button class="btn" id="order-lookup-btn" style="margin-top:10px">🔍 Suchen</button>
+      </div>
+      <div id="order-result"></div>
+    </div>
+  </section>
+
+  <!-- INFO -->
+  <section id="view-info" class="view">
+    <div class="card">
+      <h2>ℹ️ Info & Versand</h2>
+      <div class="info-block">
+        <h3>💳 Bezahlung</h3>
+        <p>Nach der Bestellung bekommst du meine <b>IBAN</b>. Bitte überweise den Betrag innerhalb von 3 Tagen.</p>
+        <div class="iban-box">
+          <span>IBAN:</span>
+          <strong id="info-iban">AT00 0000 0000 0000 0000</strong>
+        </div>
+        <div class="iban-box">
+          <span>BIC:</span>
+          <strong id="info-bic">XXXXATWW</strong>
+        </div>
+        <div class="iban-box">
+          <span>Inhaber:</span>
+          <strong id="info-owner">Kris Oberreiter</strong>
+        </div>
+      </div>
+
+      <div class="info-block">
+        <h3>🚚 Versand (Europa)</h3>
+        <p>Ich versende in <b>alle Länder der EU</b> und weitere europäische Länder.</p>
+        <table class="shipping-table" id="shipping-table">
+          <thead><tr><th>Zone</th><th>Länder</th><th>Versand</th></tr></thead>
+          <tbody>
+            <tr><td>🇦🇹 Österreich</td><td>AT</td><td>4,90 €</td></tr>
+            <tr><td>🇩🇪 Deutschland</td><td>DE</td><td>6,90 €</td></tr>
+            <tr><td>🇪🇺 EU</td><td>FR, IT, ES, NL, BE, PL, CZ...</td><td>9,90 €</td></tr>
+            <tr><td>🌍 Europa (nicht EU)</td><td>CH, UK, NO...</td><td>14,90 €</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="info-block">
+        <h3>⏱️ Druckzeit</h3>
+        <p>Alle meine Produkte haben eine Druckzeit von <b>1 bis 7 Stunden</b>. Das steht bei jedem Produkt dabei. Bei Custom-Modellen sage ich dir die Zeit vorher an.</p>
+      </div>
+
+      <div class="info-block">
+        <h3>📧 Kontakt</h3>
+        <p>Fragen? Schreib mir: <b id="info-email">kris@example.com</b></p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- WARENKORB (Sidebar) -->
+<aside class="cart-sidebar" id="cart-sidebar">
+  <div class="cart-header">
+    <h2>🛒 Warenkorb</h2>
+    <button class="close-btn" id="cart-close">✕</button>
+  </div>
+  <div class="cart-items" id="cart-items"></div>
+  <div class="cart-footer">
+    <div class="cart-total-row"><span>Zwischensumme:</span><strong id="cart-subtotal">0,00 €</strong></div>
+    <div class="cart-total-row"><span>Versand:</span><strong id="cart-shipping">0,00 €</strong></div>
+    <div class="cart-total-row big"><span>Gesamt:</span><strong id="cart-total">0,00 €</strong></div>
+    <button class="btn checkout-btn" id="checkout-btn">💳 Zur Kasse</button>
+  </div>
+</aside>
+<div class="cart-overlay" id="cart-overlay"></div>
+
+<!-- MODAL (Detail / Checkout) -->
+<div class="modal-overlay" id="modal">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

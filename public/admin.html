@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0a14">
+<title>🔐 Kris's Prints – Admin</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .login-screen {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px; z-index: 100;
+  }
+  .login-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 40px 30px;
+    max-width: 400px; width: 100%;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .login-box h1 { font-size: 1.6rem; margin-bottom: 8px; }
+  .login-box p { color: var(--text-dim); margin-bottom: 24px; font-size: .9rem; }
+  .admin-panel { display: none; }
+  .admin-panel.active { display: block; }
+  .admin-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 20px; flex-wrap: wrap; gap: 10px;
+  }
+  .admin-header h1 { font-size: 1.4rem; <div id="admin-orders"></div>
+  .product-admin-item {
+    display: flex; gap: 12px; padding: 14px;
+    background: var(--card-2); border-radius: var(--radius-sm);
+    margin-bottom: 10px; align-items: center;
+  }
+  .product-admin-item .pai-img {
+    width: 60px; height: 60px; border-radius: 8px;
+    background: var(--card); display: flex; align-items: center;
+    justify-content: center; font-size: 2rem; overflow: hidden;
+    flex-shrink: 0;
+  }
+  .product-admin-item .pai-img img { width: 100%; height: 100%; object-fit: cover; }
+  .product-admin-item .pai-info { flex: 1; min-width: 0; }
+  .product-admin-item .pai-name { font-weight: 800; margin-bottom: 4px; }
+  .product-admin-item .pai-meta { font-size: .8rem; color: var(--text-dim); }
+  .product-admin-item .pai-actions { display: flex; gap: 6px; }
+  .product-admin-item .pai-actions button {
+    background: var(--card); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 12px; border-radius: 8px;
+    cursor: pointer; font-size: .85rem; font-family: inherit;
+  }
+  .product-admin-item .pai-actions button:hover { border-color: var(--accent); }
+  .product-admin-item .pai-actions button.del:hover { border-color: var(--red); color: var(--red); }
+  .order-card {
+    background: var(--card-2); border-radius: var(--radius-sm);
+    padding: 16px; margin-bottom: 12px;
+  }
+  .order-card h3 { font-size: 1rem; margin-bottom: 8px; }
+  .order-card .meta { font-size: .85rem; color: var(--text-dim); line-height: 1.7; }
+  .status-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: .7rem; font-weight: 900; margin-left: 8px;
+  }
+  .status-neu { background: var(--accent); color: #fff; }
+  .status-gedruckt { background: var(--blue); color: #fff; }
+  .status-versendet { background: var(--green); color: #fff; }
+  .status-bezahlt { background: var(--gold); color: #000; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-screen" id="login-screen">
+  <div class="login-box">
+    <div style="font-size:3rem;margin-bottom:12px">🔐</div>
+    <h1>Admin Login</h1>
+    <p>Nur für Kris Oberreiter</p>
+    <div class="form-group">
+      <input type="password" id="admin-password" placeholder="Passwort" autocomplete="current-password">
+    </div>
+    <button class="btn" style="width:100%" id="login-btn">Anmelden</button>
+    <p style="color:var(--red);font-size:.85rem;margin-top:12px;min-height:20px" id="login-error"></p>
+    <a href="/" style="color:var(--text-dim);font-size:.8rem;display:inline-block;margin-top:16px">← Zurück zum Shop</a>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div class="admin-panel" id="admin-panel">
+  <div class="header" style="position:static;background:transparent;border:none">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🖨️</span>
+        <span class="logo-text">Admin <b>Panel</b></span>
+      </div>
+      <div class="header-actions">
+        <a href="/" class="btn secondary" style="text-decoration:none;padding:11px 18px;font-size:.85rem">🛍️ Shop</a>
+        <button class="btn secondary" id="logout-btn" style="font-size:.85rem">🚪 Logout</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="admin-header">
+      <h1>📦 Produkte verwalten</h1>
+      <button class="btn" id="add-product-btn">➕ Neues Produkt</button>
+    </div>
+
+    <div id="admin-products"></div>
+
+    <div class="admin-header" style="margin-top:40px">
+      <h1>📬 Bestellungen</h1>
+      <button class="btn secondary" onclick="loadOrders()">🔄 Aktualisieren</button>
+    </div>
+
+   <div id="admin-orders"></div>
+    <!-- SETTINGS-BEREICH -->
+    <div class="admin-header" style="margin-top:40px">
+      <h1>⚙️ Shop-Einstellungen</h1>
+    </div>
+
+    <div class="tabs-settings" style="display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap">
+      <button class="nav-tab active" data-stab="shop">🏪 Shop</button>
+      <button class="nav-tab" data-stab="shipping">🚚 Versand</button>
+      <button class="nav-tab" data-stab="design">🎨 Design</button>
+      <button class="nav-tab" data-stab="texts">📝 Texte</button>
+    </div>
+
+    <!-- Shop-Info -->
+    <div class="settings-tab active" id="stab-shop">
+      <div class="card">
+        <h2>🏪 Shop-Daten</h2>
+        <div class="form-group"><label>Shop-Name</label><input type="text" id="s-shop-name"></div>
+        <div class="form-group"><label>Logo-Emoji</label><input type="text" id="s-logo-emoji" maxlength="4"></div>
+        <div class="form-group"><label>IBAN</label><input type="text" id="s-iban"></div>
+        <div class="form-group"><label>BIC</label><input type="text" id="s-bic"></div>
+        <div class="form-group"><label>Inhaber</label><input type="text" id="s-owner"></div>
+        <div class="form-group"><label>Kontakt-E-Mail (für Kunden sichtbar)</label><input type="email" id="s-email"></div>
+      </div>
+    </div>
+
+    <!-- Versand -->
+    <div class="settings-tab" id="stab-shipping" style="display:none">
+      <div class="card">
+        <h2>🚚 Versandkosten (€)</h2>
+        <p style="color:var(--text-dim);margin-bottom:14px;font-size:.85rem">Trage die Kosten pro Land ein. Die Preise siehst du im Shop bei „Info & Versand".</p>
+        <div id="shipping-editor" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px"></div>
+      </div>
+    </div>
+
+    <!-- Design -->
+    <div class="settings-tab" id="stab-design" style="display:none">
+      <div class="card">
+        <h2>🎨 Farben</h2>
+        <div class="form-group"><label>Akzentfarbe (Buttons)</label><input type="color" id="s-accent" style="height:50px"></div>
+        <div class="form-group"><label>Zweite Akzentfarbe</label><input type="color" id="s-accent2" style="height:50px"></div>
+        <div class="form-group"><label>Hintergrund</label><input type="color" id="s-bg" style="height:50px"></div>
+        <div class="form-group"><label>Karten-Hintergrund</label><input type="color" id="s-bgCard" style="height:50px"></div>
+      </div>
+    </div>
+
+    <!-- Texte -->
+    <div class="settings-tab" id="stab-texts" style="display:none">
+      <div class="card">
+        <h2>📝 Hero-Texte</h2>
+        <div class="form-group"><label>Titel</label><input type="text" id="s-hero-title"></div>
+        <div class="form-group"><label>Untertitel</label><input type="text" id="s-hero-sub"></div>
+        <div class="form-group"><label>Badge 1</label><input type="text" id="s-badge1"></div>
+        <div class="form-group"><label>Badge 2</label><input type="text" id="s-badge2"></div>
+        <div class="form-group"><label>Badge 3</label><input type="text" id="s-badge3"></div>
+      </div>
+    </div>
+
+    <button class="btn" id="save-settings-btn" style="width:100%;margin-top:20px">💾 Alle Einstellungen speichern</button>
+
+    <p style="color:var(--green);text-align:center;margin-top:12px;min-height:20px" id="settings-saved"></p>
+  </div>
+</div>
+
+<!-- MODAL für Produkt bearbeiten -->
+<div class="modal-overlay" id="modal">
+  <div class="modal" id="modal-content" style="position:relative"></div>
+</div>
+
+<script src="admin.js"></script>
+</body>
+</html>

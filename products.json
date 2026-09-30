@@ -1,0 +1,99 @@
+[
+  {
+    "id": "p1",
+    "name": "🦉 Eule Deko",
+    "emoji": "🦉",
+
+    "price": 12.00,
+    "category": "🎨 Deko",
+    "printTime": 3,
+    "material": "PLA",
+    "color": "Braun",
+    "description": "Handgefertigte Eule aus PLA, ca. 10 cm hoch. Perfekt als Deko für Regal oder Schreibtisch.",
+    "createdAt": 1730000000000
+  },
+  {
+    "id": "p2",
+    "name": "🐉 Drache Figur",
+    "emoji": "🐉",
+    "price": 25.00,
+    "category": "🧸 Spielzeug",
+    "printTime": 5,
+    "material": "PLA",
+    "color": "Grün",
+    "description": "Detaillierter Drache, ca. 15 cm. Tolles Geschenk für Fantasy-Fans.",
+    "createdAt": 1730000001000
+  },
+  {
+    "id": "p3",
+    "name": "🔧 Werkzeug-Halter",
+    "emoji": "🔧",
+    "price": 8.00,
+    "category": "🔧 Werkzeug",
+    "printTime": 2,
+    "material": "PETG",
+    "color": "Schwarz",
+    "description": "Stabiler Halter für Schraubenzieher und Bits. Passt an jede Wand.",
+    "createdAt": 1730000002000
+  },
+  {
+    "id": "p4",
+    "name": "🎁 Herz-Box",
+    "emoji": "🎁",
+    "price": 15.00,
+    "category": "🎁 Geschenke",
+    "printTime": 4,
+    "material": "PLA",
+    "color": "Rot",
+    "description": "Herzförmige Aufbewahrungsbox mit Deckel. Perfekt für kleine Geschenke.",
+    "createdAt": 1730000003000
+  },
+  {
+    "id": "p5",
+    "name": "🌱 Pflanzen-Topf",
+    "emoji": "🌱",
+    "price": 20.00,
+    "category": "🏠 Haushalt",
+    "printTime": 6,
+    "material": "PLA",
+    "color": "Weiß",
+    "description": "Moderner Übertopf für kleine Pflanzen. Mit Wasserablauf.",
+    "createdAt": 1730000004000
+  },
+  {
+    "id": "p6",
+    "name": "🚗 Mini-Auto",
+    "emoji": "🚗",
+    "price": 5.00,
+    "category": "🧸 Spielzeug",
+    "printTime": 1,
+    "material": "PLA",
+    "color": "Blau",
+    "description": "Kleines Spielzeugauto, ca. 8 cm lang. Robust und bunt.",
+    "createdAt": 1730000005000
+  },
+  {
+    "id": "p7",
+    "name": "🏰 Burg-Modell",
+    "emoji": "🏰",
+    "price": 35.00,
+    "category": "🎨 Deko",
+    "printTime": 7,
+    "material": "PLA",
+    "color": "Grau",
+    "description": "Detailliertes Burg-Modell, ca. 20 cm hoch. Hingucker für jede Sammlung.",
+    "createdAt": 1730000006000
+  },
+  {
+    "id": "p8",
+    "name": "☕ Kaffee-Halter",
+    "emoji": "☕",
+    "price": 10.00,
+    "category": "🏠 Haushalt",
+    "printTime": 2,
+    "material": "PETG",
+    "color": "Braun",
+    "description": "Halter für Kaffeekapseln oder Teebeutel. Ordnung in der Küche.",
+    "createdAt": 1730000007000
+  }
+]
