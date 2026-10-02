@@ -10,17 +10,12 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
 // ============================================================
 // DATENBANK VERBINDUNG
 // ============================================================
 const sql = neon(process.env.DATABASE_URL);
 
-// Tabellen anlegen (falls nicht vorhanden)
 async function initDB() {
   try {
     await sql`
@@ -53,9 +48,9 @@ async function initDB() {
       )
     `;
     await sql`
-      CREATE TABLE IF NOT EXISTS customs (
+      CREATE TABLE IF NOT EXISTS images (
         id TEXT PRIMARY KEY,
-        data JSONB NOT NULL,
+        data TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
       )
     `;
@@ -66,7 +61,7 @@ async function initDB() {
 }
 
 // ============================================================
-// KONFIGURATION
+// KONFIG
 // ============================================================
 const MAIL_TO = process.env.MAIL_TO || 'deine-adresse@aon.at';
 const MAIL_PROVIDER = process.env.MAIL_PROVIDER || 'resend';
@@ -85,7 +80,7 @@ function checkAuth(req, res, next) {
 function sendOrderEmail(order) {
   const items = order.items.map(i => `  ${i.qty}x ${i.name} - ${(i.price * i.qty).toFixed(2)} EUR`).join('\n');
   const text = `NEUE BESTELLUNG - Kris's Prints\n=====================================\n\nBestellnummer: ${order.id}\nDatum: ${new Date(order.createdAt).toLocaleString('de-DE')}\n\nPRODUKTE:\n${items}\n\nGESAMT: ${order.total.toFixed(2)} EUR\n\nKUNDE:\n${order.customer.name}\n${order.customer.email}\n${order.customer.phone || ''}\n\nLIEFERADRESSE:\n${order.customer.address}\n${order.customer.zip} ${order.customer.city}\n${order.customer.country}\n`;
-  
+
   const fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
 
   if (MAIL_PROVIDER === 'resend') {
@@ -268,35 +263,28 @@ app.put('/api/admin/orders/:id', checkAuth, async (req, res) => {
 });
 
 // ============================================================
-// ADMIN: BILD-UPLOAD
+// ADMIN: BILD-UPLOAD (in DB speichern)
 // ============================================================
-const IMAGES_DIR = path.join(__dirname, 'public', 'images');
-if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
-
-// Bilder direkt in Datenbank (keine lokale Speicherung mehr)
 const imageUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ok = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(file.originalname);
-    cb(ok ? null : new Error('Nur Bilder'), ok);
+    cb(ok ? null : new Error('Nur Bilder erlaubt'), ok);
   }
 });
 
-  app.post('/api/admin/upload-image', checkAuth, imageUpload.single('image'), async (req, res) => {
+app.post('/api/admin/upload-image', checkAuth, imageUpload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ erfolg: false, error: 'Keine Datei' });
   try {
-    // Base64 aus Buffer
     const base64 = req.file.buffer.toString('base64');
     const mime = req.file.mimetype;
     const dataUrl = `data:${mime};base64,${base64}`;
-    
-    // In DB speichern mit eindeutigem Key
-    const id = 'img_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-    await sql`CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW())`;
+
+    const id = 'img_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     await sql`INSERT INTO images (id, data) VALUES (${id}, ${dataUrl})`;
-    
-    console.log('🖼️  Bild in DB gespeichert:', id, '-', (req.file.size/1024).toFixed(0) + ' KB');
+
+    console.log('🖼️  Bild in DB gespeichert:', id, '-', (req.file.size / 1024).toFixed(0) + ' KB');
     res.json({ erfolg: true, path: '/api/images/' + id, url: '/api/images/' + id });
   } catch (e) {
     console.error('❌ Bild-Upload Fehler:', e.message);
@@ -320,11 +308,6 @@ app.get('/api/images/:id', async (req, res) => {
   } catch (e) {
     res.status(500).send('Fehler');
   }
-});
-  if (!req.file) return res.status(400).json({ erfolg: false, error: 'Keine Datei' });
-  const relPath = 'images/' + req.file.filename;
-  console.log('🖼️  Bild hochgeladen:', relPath);
-  res.json({ erfolg: true, path: relPath, url: '/' + relPath });
 });
 
 // ============================================================
@@ -395,39 +378,6 @@ app.get('/api/info', async (req, res) => {
     res.json(s.shop);
   } catch (e) {
     res.json(DEFAULT_SETTINGS.shop);
-  }
-});
-
-// ============================================================
-// CUSTOM UPLOAD
-// ============================================================
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, unique + '-' + file.originalname);
-  }
-});
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
-
-app.post('/api/custom-upload', upload.single('model'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Keine Datei' });
-  try {
-    const custom = {
-      id: 'CUS-' + Date.now().toString(36).toUpperCase(),
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      message: req.body.message || '',
-      contact: req.body.contact || '',
-      status: 'neu',
-      createdAt: new Date().toISOString()
-    };
-    await sql`INSERT INTO customs (id, data) VALUES (${custom.id}, ${JSON.stringify(custom)})`;
-    console.log('📤 Custom Upload:', custom.id);
-    res.json({ erfolg: true, id: custom.id });
-  } catch (e) {
-    res.status(500).json({ erfolg: false, error: e.message });
   }
 });
 
