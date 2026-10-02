@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const { neon } = require('@neondatabase/serverless');
 require('dotenv').config();
 
 const app = express();
@@ -11,54 +12,59 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-const DATA_DIR = path.join(__dirname, 'data');
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
-function readJSON(file, def) {
-  const p = path.join(DATA_DIR, file);
-  if (!fs.existsSync(p)) return def;
-  try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch(e) { return def; }
+// ============================================================
+// DATENBANK VERBINDUNG
+// ============================================================
+const sql = neon(process.env.DATABASE_URL);
+
+// Tabellen anlegen (falls nicht vorhanden)
+async function initDB() {
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS products (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        emoji TEXT,
+        image TEXT,
+        price NUMERIC,
+        print_time INTEGER,
+        category TEXT,
+        material TEXT,
+        color TEXT,
+        description TEXT,
+        created_at BIGINT
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS orders (
+        id TEXT PRIMARY KEY,
+        data JSONB NOT NULL,
+        status TEXT DEFAULT 'neu',
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value JSONB NOT NULL
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS customs (
+        id TEXT PRIMARY KEY,
+        data JSONB NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `;
+    console.log('✅ Datenbank initialisiert');
+  } catch (e) {
+    console.error('❌ DB Init Fehler:', e.message);
+  }
 }
-function writeJSON(file, data) {
-  const p = path.join(DATA_DIR, file);
-  fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
-}
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, unique + '-' + file.originalname);
-  }
-});
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
-
-// Separater Upload für Produktbilder → public/images/
-const IMAGES_DIR = path.join(__dirname, 'public', 'images');
-if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
-
-const imageStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, IMAGES_DIR),
-  filename: (req, file, cb) => {
-    // Name = produktname.png (URL-safe)
-    const orig = file.originalname.toLowerCase().replace(/[^a-z0-9.-]/g, '-');
-    const unique = Date.now().toString(36);
-    const ext = path.extname(orig) || '.png';
-    const base = path.basename(orig, ext).slice(0, 30);
-    cb(null, base + '-' + unique + ext);
-  }
-});
-
-const imageUpload = multer({
-  storage: imageStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },  // 5 MB max
-  fileFilter: (req, file, cb) => {
-    const ok = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(file.originalname);
-    cb(ok ? null : new Error('Nur Bilder erlaubt (png/jpg/gif/webp/svg)'), ok);
-  }
-});
 // ============================================================
 // KONFIGURATION
 // ============================================================
@@ -79,128 +85,250 @@ function checkAuth(req, res, next) {
 function sendOrderEmail(order) {
   const items = order.items.map(i => `  ${i.qty}x ${i.name} - ${(i.price * i.qty).toFixed(2)} EUR`).join('\n');
   const text = `NEUE BESTELLUNG - Kris's Prints\n=====================================\n\nBestellnummer: ${order.id}\nDatum: ${new Date(order.createdAt).toLocaleString('de-DE')}\n\nPRODUKTE:\n${items}\n\nGESAMT: ${order.total.toFixed(2)} EUR\n\nKUNDE:\n${order.customer.name}\n${order.customer.email}\n${order.customer.phone || ''}\n\nLIEFERADRESSE:\n${order.customer.address}\n${order.customer.zip} ${order.customer.city}\n${order.customer.country}\n`;
-
+  
   const fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
 
   if (MAIL_PROVIDER === 'resend') {
     try {
       const { Resend } = require('resend');
       const resend = new Resend(process.env.RESEND_API_KEY || '');
-
       resend.emails.send({
         from: `Kris's Prints <${fromEmail}>`,
         to: MAIL_TO,
         subject: `Neue Bestellung ${order.id} - ${order.total.toFixed(2)} EUR`,
         text: text
       }).then((response) => {
-        if (response.error) {
-          console.error('❌ Resend Fehler:', response.error.message);
-        } else {
-          console.log('✅ E-Mail via Resend gesendet:', response.data.id);
-        }
-      }).catch(err => {
-        console.error('❌ Resend Fehler:', err.message);
-      });
+        if (response.error) console.error('❌ Resend Fehler:', response.error.message);
+        else console.log('✅ E-Mail via Resend gesendet');
+      }).catch(err => console.error('❌ Resend:', err.message));
     } catch (e) {
-      console.error('❌ Resend Setup-Fehler:', e.message);
-    }
-  } else if (MAIL_PROVIDER === 'gmail') {
-    try {
-      const nodemailer = require('nodemailer');
-      const transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-      });
-      transporter.sendMail({
-        from: `"Kris's Prints" <${process.env.SMTP_USER}>`,
-        to: MAIL_TO,
-        subject: `Neue Bestellung ${order.id} - ${order.total.toFixed(2)} EUR`,
-        text: text
-      }, (err) => {
-        if (err) console.error('❌ Gmail Fehler:', err.message);
-        else console.log('✅ E-Mail via Gmail gesendet');
-      });
-    } catch (e) {
-      console.error('❌ Gmail Setup-Fehler:', e.message);
+      console.error('❌ Resend Setup:', e.message);
     }
   }
 }
+
 // ============================================================
 // PRODUKTE
 // ============================================================
-app.get('/api/products', (req, res) => {
-  res.json(readJSON('products.json', []));
+app.get('/api/products', async (req, res) => {
+  try {
+    const rows = await sql`SELECT * FROM products ORDER BY created_at DESC`;
+    const products = rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      emoji: r.emoji,
+      image: r.image,
+      price: parseFloat(r.price),
+      printTime: r.print_time,
+      category: r.category,
+      material: r.material,
+      color: r.color,
+      description: r.description,
+      createdAt: parseInt(r.created_at)
+    }));
+    res.json(products);
+  } catch (e) {
+    console.error('Produkte laden:', e.message);
+    res.json([]);
+  }
 });
 
-app.get('/api/products/:id', (req, res) => {
-  const p = readJSON('products.json', []).find(x => x.id === req.params.id);
-  if (!p) return res.status(404).json({ error: 'Nicht gefunden' });
-  res.json(p);
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const rows = await sql`SELECT * FROM products WHERE id = ${req.params.id}`;
+    if (rows.length === 0) return res.status(404).json({ error: 'Nicht gefunden' });
+    const r = rows[0];
+    res.json({
+      id: r.id, name: r.name, emoji: r.emoji, image: r.image,
+      price: parseFloat(r.price), printTime: r.print_time,
+      category: r.category, material: r.material, color: r.color,
+      description: r.description, createdAt: parseInt(r.created_at)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ============================================================
 // BESTELLUNGEN
 // ============================================================
-app.post('/api/orders', (req, res) => {
-  const orders = readJSON('orders.json', []);
-  const order = {
-    id: 'ORD-' + Date.now().toString(36).toUpperCase(),
-    ...req.body,
-    status: 'neu',
-    createdAt: new Date().toISOString()
-  };
-  orders.push(order);
-  writeJSON('orders.json', orders);
-  console.log('🛒 Bestellung:', order.id, '-', order.customer?.name, '-', order.total + ' EUR');
-  sendOrderEmail(order);
-  res.json({ erfolg: true, orderId: order.id });
+app.post('/api/orders', async (req, res) => {
+  try {
+    const order = {
+      id: 'ORD-' + Date.now().toString(36).toUpperCase(),
+      ...req.body,
+      status: 'neu',
+      createdAt: new Date().toISOString()
+    };
+    await sql`INSERT INTO orders (id, data, status) VALUES (${order.id}, ${JSON.stringify(order)}, ${order.status})`;
+    console.log('🛒 Bestellung:', order.id, '-', order.customer?.name, '-', order.total + ' EUR');
+    sendOrderEmail(order);
+    res.json({ erfolg: true, orderId: order.id });
+  } catch (e) {
+    console.error('Bestellung Fehler:', e.message);
+    res.status(500).json({ erfolg: false, error: e.message });
+  }
 });
 
-app.get('/api/orders', (req, res) => {
-  res.json(readJSON('orders.json', []));
-});
-
-// ============================================================
-// CUSTOM UPLOAD
-// ============================================================
-app.post('/api/custom-upload', upload.single('model'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Keine Datei' });
-  const customs = readJSON('customs.json', []);
-  const custom = {
-    id: 'CUS-' + Date.now().toString(36).toUpperCase(),
-    filename: req.file.filename,
-    originalName: req.file.originalname,
-    size: req.file.size,
-    message: req.body.message || '',
-    contact: req.body.contact || '',
-    status: 'neu',
-    createdAt: new Date().toISOString()
-  };
-  customs.push(custom);
-  writeJSON('customs.json', customs);
-  console.log('📤 Custom Upload:', custom.id, '-', req.file.originalname);
-  res.json({ erfolg: true, id: custom.id });
+app.get('/api/orders', async (req, res) => {
+  try {
+    const rows = await sql`SELECT data, status FROM orders ORDER BY created_at DESC`;
+    const orders = rows.map(r => ({ ...r.data, status: r.status }));
+    res.json(orders);
+  } catch (e) {
+    res.json([]);
+  }
 });
 
 // ============================================================
-// BEWERTUNGEN
+// ADMIN: LOGIN
 // ============================================================
-app.get('/api/reviews/:productId', (req, res) => {
-  const reviews = readJSON('reviews.json', []);
-  res.json(reviews.filter(r => r.productId === req.params.productId));
-});
-
-app.post('/api/reviews', (req, res) => {
-  const reviews = readJSON('reviews.json', []);
-  reviews.push({ id: 'REV-' + Date.now().toString(36).toUpperCase(), ...req.body, createdAt: new Date().toISOString() });
-  writeJSON('reviews.json', reviews);
-  res.json({ erfolg: true });
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASSWORD) {
+    console.log('🔓 Admin-Login erfolgreich');
+    res.json({ erfolg: true, token: ADMIN_TOKEN });
+  } else {
+    res.status(401).json({ erfolg: false, error: 'Falsches Passwort' });
+  }
 });
 
 // ============================================================
-// SHOP-INFO & SETTINGS
+// ADMIN: PRODUKTE
+// ============================================================
+app.post('/api/admin/products', checkAuth, async (req, res) => {
+  try {
+    const p = req.body;
+    const id = 'p' + Date.now().toString(36);
+    await sql`
+      INSERT INTO products (id, name, emoji, image, price, print_time, category, material, color, description, created_at)
+      VALUES (${id}, ${p.name}, ${p.emoji}, ${p.image}, ${p.price}, ${p.printTime}, ${p.category}, ${p.material}, ${p.color}, ${p.description}, ${Date.now()})
+    `;
+    console.log('➕ Produkt hinzugefügt:', p.name);
+    res.json({ erfolg: true, product: { id, ...p } });
+  } catch (e) {
+    res.status(500).json({ erfolg: false, error: e.message });
+  }
+});
+
+app.put('/api/admin/products/:id', checkAuth, async (req, res) => {
+  try {
+    const p = req.body;
+    await sql`
+      UPDATE products SET
+        name = ${p.name}, emoji = ${p.emoji}, image = ${p.image},
+        price = ${p.price}, print_time = ${p.printTime},
+        category = ${p.category}, material = ${p.material},
+        color = ${p.color}, description = ${p.description}
+      WHERE id = ${req.params.id}
+    `;
+    console.log('✏️ Produkt bearbeitet:', p.name);
+    res.json({ erfolg: true });
+  } catch (e) {
+    res.status(500).json({ erfolg: false, error: e.message });
+  }
+});
+
+app.delete('/api/admin/products/:id', checkAuth, async (req, res) => {
+  try {
+    await sql`DELETE FROM products WHERE id = ${req.params.id}`;
+    console.log('🗑️ Produkt gelöscht:', req.params.id);
+    res.json({ erfolg: true });
+  } catch (e) {
+    res.status(500).json({ erfolg: false, error: e.message });
+  }
+});
+
+// ============================================================
+// ADMIN: BESTELLUNGEN
+// ============================================================
+app.get('/api/admin/orders', checkAuth, async (req, res) => {
+  try {
+    const rows = await sql`SELECT data, status FROM orders ORDER BY created_at DESC`;
+    const orders = rows.map(r => ({ ...r.data, status: r.status }));
+    res.json(orders);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+app.put('/api/admin/orders/:id', checkAuth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const rows = await sql`SELECT data FROM orders WHERE id = ${req.params.id}`;
+    if (rows.length === 0) return res.status(404).json({ erfolg: false });
+    const data = rows[0].data;
+    data.status = status;
+    await sql`UPDATE orders SET data = ${JSON.stringify(data)}, status = ${status} WHERE id = ${req.params.id}`;
+    console.log('📝 Bestellstatus:', req.params.id, '→', status);
+    res.json({ erfolg: true });
+  } catch (e) {
+    res.status(500).json({ erfolg: false, error: e.message });
+  }
+});
+
+// ============================================================
+// ADMIN: BILD-UPLOAD
+// ============================================================
+const IMAGES_DIR = path.join(__dirname, 'public', 'images');
+if (!fs.existsSync(IMAGES_DIR)) fs.mkdirSync(IMAGES_DIR, { recursive: true });
+
+// Bilder direkt in Datenbank (keine lokale Speicherung mehr)
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(file.originalname);
+    cb(ok ? null : new Error('Nur Bilder'), ok);
+  }
+});
+
+  app.post('/api/admin/upload-image', checkAuth, imageUpload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ erfolg: false, error: 'Keine Datei' });
+  try {
+    // Base64 aus Buffer
+    const base64 = req.file.buffer.toString('base64');
+    const mime = req.file.mimetype;
+    const dataUrl = `data:${mime};base64,${base64}`;
+    
+    // In DB speichern mit eindeutigem Key
+    const id = 'img_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+    await sql`CREATE TABLE IF NOT EXISTS images (id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW())`;
+    await sql`INSERT INTO images (id, data) VALUES (${id}, ${dataUrl})`;
+    
+    console.log('🖼️  Bild in DB gespeichert:', id, '-', (req.file.size/1024).toFixed(0) + ' KB');
+    res.json({ erfolg: true, path: '/api/images/' + id, url: '/api/images/' + id });
+  } catch (e) {
+    console.error('❌ Bild-Upload Fehler:', e.message);
+    res.status(500).json({ erfolg: false, error: e.message });
+  }
+});
+
+// Bilder aus DB ausliefern
+app.get('/api/images/:id', async (req, res) => {
+  try {
+    const rows = await sql`SELECT data FROM images WHERE id = ${req.params.id}`;
+    if (rows.length === 0) return res.status(404).send('Nicht gefunden');
+    const dataUrl = rows[0].data;
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return res.status(500).send('Ungültiges Format');
+    const mime = match[1];
+    const buffer = Buffer.from(match[2], 'base64');
+    res.set('Content-Type', mime);
+    res.set('Cache-Control', 'public, max-age=31536000');
+    res.send(buffer);
+  } catch (e) {
+    res.status(500).send('Fehler');
+  }
+});
+  if (!req.file) return res.status(400).json({ erfolg: false, error: 'Keine Datei' });
+  const relPath = 'images/' + req.file.filename;
+  console.log('🖼️  Bild hochgeladen:', relPath);
+  res.json({ erfolg: true, path: relPath, url: '/' + relPath });
+});
+
+// ============================================================
+// SETTINGS
 // ============================================================
 const DEFAULT_SETTINGS = {
   shop: {
@@ -234,93 +362,73 @@ const DEFAULT_SETTINGS = {
   }
 };
 
-app.get('/api/settings', (req, res) => {
-  res.json(readJSON('settings.json', DEFAULT_SETTINGS));
-});
-
-app.post('/api/admin/settings', checkAuth, (req, res) => {
-  writeJSON('settings.json', req.body);
-  console.log('✏️ Settings aktualisiert');
-  res.json({ erfolg: true });
-});
-
-app.get('/api/info', (req, res) => {
-  const s = readJSON('settings.json', DEFAULT_SETTINGS);
-  res.json(s.shop);
-});
-
-// ============================================================
-// ADMIN: LOGIN
-// ============================================================
-app.post('/api/admin/login', (req, res) => {
-  const { password } = req.body;
-  if (password === ADMIN_PASSWORD) {
-    console.log('🔓 Admin-Login erfolgreich');
-    res.json({ erfolg: true, token: ADMIN_TOKEN });
-  } else {
-    console.log('❌ Admin-Login fehlgeschlagen');
-    res.status(401).json({ erfolg: false, error: 'Falsches Passwort' });
+app.get('/api/settings', async (req, res) => {
+  try {
+    const rows = await sql`SELECT value FROM settings WHERE key = 'main'`;
+    if (rows.length === 0) {
+      await sql`INSERT INTO settings (key, value) VALUES ('main', ${JSON.stringify(DEFAULT_SETTINGS)})`;
+      return res.json(DEFAULT_SETTINGS);
+    }
+    res.json(rows[0].value);
+  } catch (e) {
+    res.json(DEFAULT_SETTINGS);
   }
 });
-// ============================================================
-// ADMIN: BILD-UPLOAD
-// ============================================================
-app.post('/api/admin/upload-image', checkAuth, imageUpload.single('image'), (req, res) => {
-  if (!req.file) return res.status(400).json({ erfolg: false, error: 'Keine Datei' });
-  const relPath = 'images/' + req.file.filename;
-  console.log('🖼️  Bild hochgeladen:', relPath);
-  res.json({ erfolg: true, path: relPath, url: '/' + relPath });
-});
-// ============================================================
-// ADMIN: PRODUKTE
-// ============================================================
-app.post('/api/admin/products', checkAuth, (req, res) => {
-  const product = {
-    id: 'p' + Date.now().toString(36),
-    ...req.body,
-    createdAt: Date.now()
-  };
-  const products = readJSON('products.json', []);
-  products.push(product);
-  writeJSON('products.json', products);
-  console.log('➕ Produkt hinzugefügt:', product.name);
-  res.json({ erfolg: true, product });
+
+app.post('/api/admin/settings', checkAuth, async (req, res) => {
+  try {
+    await sql`
+      INSERT INTO settings (key, value) VALUES ('main', ${JSON.stringify(req.body)})
+      ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify(req.body)}
+    `;
+    console.log('✏️ Settings aktualisiert');
+    res.json({ erfolg: true });
+  } catch (e) {
+    res.status(500).json({ erfolg: false, error: e.message });
+  }
 });
 
-app.put('/api/admin/products/:id', checkAuth, (req, res) => {
-  const products = readJSON('products.json', []);
-  const idx = products.findIndex(p => p.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ erfolg: false });
-  products[idx] = { ...products[idx], ...req.body };
-  writeJSON('products.json', products);
-  console.log('✏️ Produkt bearbeitet:', products[idx].name);
-  res.json({ erfolg: true, product: products[idx] });
-});
-
-app.delete('/api/admin/products/:id', checkAuth, (req, res) => {
-  let products = readJSON('products.json', []);
-  const before = products.length;
-  products = products.filter(p => p.id !== req.params.id);
-  if (products.length === before) return res.status(404).json({ erfolg: false });
-  writeJSON('products.json', products);
-  console.log('🗑️ Produkt gelöscht:', req.params.id);
-  res.json({ erfolg: true });
+app.get('/api/info', async (req, res) => {
+  try {
+    const rows = await sql`SELECT value FROM settings WHERE key = 'main'`;
+    const s = rows.length > 0 ? rows[0].value : DEFAULT_SETTINGS;
+    res.json(s.shop);
+  } catch (e) {
+    res.json(DEFAULT_SETTINGS.shop);
+  }
 });
 
 // ============================================================
-// ADMIN: BESTELLUNGEN
+// CUSTOM UPLOAD
 // ============================================================
-app.get('/api/admin/orders', checkAuth, (req, res) => {
-  res.json(readJSON('orders.json', []));
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, unique + '-' + file.originalname);
+  }
 });
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
-app.put('/api/admin/orders/:id', checkAuth, (req, res) => {
-  const orders = readJSON('orders.json', []);
-  const idx = orders.findIndex(o => o.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ erfolg: false });
-  orders[idx] = { ...orders[idx], ...req.body };
-  writeJSON('orders.json', orders);
-  res.json({ erfolg: true });
+app.post('/api/custom-upload', upload.single('model'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Keine Datei' });
+  try {
+    const custom = {
+      id: 'CUS-' + Date.now().toString(36).toUpperCase(),
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      message: req.body.message || '',
+      contact: req.body.contact || '',
+      status: 'neu',
+      createdAt: new Date().toISOString()
+    };
+    await sql`INSERT INTO customs (id, data) VALUES (${custom.id}, ${JSON.stringify(custom)})`;
+    console.log('📤 Custom Upload:', custom.id);
+    res.json({ erfolg: true, id: custom.id });
+  } catch (e) {
+    res.status(500).json({ erfolg: false, error: e.message });
+  }
 });
 
 // ============================================================
@@ -333,12 +441,15 @@ app.get('*', (req, res) => {
 // ============================================================
 // START
 // ============================================================
-app.listen(PORT, () => {
-  console.log('');
-  console.log('═══════════════════════════════════════');
-  console.log("🖨️  Kris's Prints läuft auf Port " + PORT);
-  console.log('🌐 http://localhost:' + PORT);
-  console.log('📧 Mail-Provider: ' + MAIL_PROVIDER);
-  console.log('═══════════════════════════════════════');
-  console.log('');
+initDB().then(() => {
+  app.listen(PORT, () => {
+    console.log('');
+    console.log('═══════════════════════════════════════');
+    console.log("🖨️  Kris's Prints läuft auf Port " + PORT);
+    console.log('🌐 http://localhost:' + PORT);
+    console.log('📧 Mail-Provider: ' + MAIL_PROVIDER);
+    console.log('💾 Datenbank: Neon PostgreSQL');
+    console.log('═══════════════════════════════════════');
+    console.log('');
+  });
 });
